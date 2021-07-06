@@ -26,17 +26,52 @@ import json
 import quaternion
 from scipy.spatial.transform import Rotation as R
 
+def load_data(filename='./sample_data/RECORD.BIN'):
+    names = ['head','index',
+             'hi_temp','hi_gyro','hi_acc',
+             'lo_gyro','lo_acc','lo_magnet',
+             'angles','q']
+    formats = ['<H','<I',
+               '<h','3<i','3<i',
+               '3<h','3<h','3<h',
+               '3<h','4<h']
+    dtype = np.dtype({'names':names,'formats':formats})
+    with open(filename,'rb') as fid:
+        filelength = os.path.getsize(filename)
+        # skip the first 13 data record
+        fid.seek(13*64)
+        RecordSize = int(filelength/64-13)
+        print(f"{RecordSize} records in file")
+        data_orig = np.fromfile(fid,dtype=dtype)
+    data = dict()
+    data['index'] = data_orig['index']
+    data['hi_temp'] = data_orig['hi_temp']/80.+25
+    data['hi_gyro'] = data_orig['hi_gyro']* 0.00625/65536 # degree/sec
+    data['hi_acc'] = data_orig['hi_acc']* 1.25/65536     # mg
+    data['lo_gyro'] = data_orig['lo_gyro']* 2000./32768 #degree/sec
+    data['lo_gyro'][:,1:3] = -data['lo_gyro'][:,1:3]
+    data['lo_acc'] = data_orig['lo_acc']* 16000./32768 #mg
+    data['lo_acc'][:,1:3] = -data['lo_acc'][:,1:3]
+    data['lo_magnet'] = data_orig['lo_magnet'].astype(float)
+    data['angles'] = data_orig['angles']* 180./32768 #degree
+    data['q'] = data_orig['q']/32768. #degree
+    return data
+
 class BoxRoll:
     def __init__(self,fname=None,useQuat=True):
         self.fname = fname
+        self.useQuat=useQuat
         if not fname is None:
             self.load_data(fname)
         else:
             self.gen_sample_sequence()
-        self.useQuat=useQuat
 
     def load_data(self,fname):
-        self.sequence = quaternion.as_quat_array(np.loadtxt(fname))
+        if self.useQuat:
+            self.sequence = quaternion.as_quat_array(np.loadtxt(fname))
+        else:
+            self.sequence = np.loadtxt(fname)
+            self.sequence[:,0],self.sequence[:,2] = self.sequence[:,2],self.sequence[:,0]
 
     def gen_sample_sequence(self,n=10000):
         data = np.zeros((n,4))
