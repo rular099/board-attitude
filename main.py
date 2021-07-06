@@ -17,7 +17,7 @@ def load_data(filename='./RECORD.BIN'):
         # skip the first 13 data record
         fid.seek(13*64)
         RecordSize = int(filelength/64-13)
-        print(RecordSize)
+        print(f"{RecordSize} records in file")
         data_orig = np.fromfile(fid,dtype=dtype)
     data = dict()
     data['index'] = data_orig['index']
@@ -38,8 +38,10 @@ if __name__ == '__main__':
     data = load_data(filename)
 
     res = np.zeros((len(data['index']),4))
-    mad_filter = MadgwickAHRS()
+    mad_filter = MadgwickAHRS(sample_period=1/50.,beta=0.003)
     for i in range(len(data['index'])):
         mad_filter.update(data['lo_gyro'][i],data['lo_acc'][i],data['lo_magnet'][i])
         res[i] = mad_filter.q.components
-    np.savetxt('result.txt',res)
+    np.savetxt('result_q.txt',res)
+    np.savetxt('record_angle.txt',data['angles'])
+    np.savetxt('record_q.txt',data['q'])

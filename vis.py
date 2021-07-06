@@ -117,12 +117,13 @@ class BoxRoll:
         glRasterPos3d(*position)
         glDrawPixels(textSurface.get_width(), textSurface.get_height(), GL_RGBA, GL_UNSIGNED_BYTE, textData)
 
-    def show(self,sequence=None,useQuat=None):
+    def show(self,sequence=None,useQuat=None,fps=50):
         if useQuat is None:
             useQuat = self.useQuat
         self._init_view()
         frames = 0
         ticks = pygame.time.get_ticks()
+        fps_clock = pygame.time.Clock()
         for x in self.sequence:
             event = pygame.event.poll()
             if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
@@ -134,6 +135,7 @@ class BoxRoll:
                 yaw,pitch,roll = x
                 self.draw_cube(1, yaw, pitch, roll, useQuat)
             pygame.display.flip()
+            fps_clock.tick(fps)
             frames += 1
         print("fps: %d" % ((frames*1000)/(pygame.time.get_ticks()-ticks)))
 
@@ -161,6 +163,6 @@ class BoxRoll:
         glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST)
 
 if __name__ == '__main__':
-    fname = './result.txt'
+    fname = './result_q.txt'
     box_roll = BoxRoll(fname)
     box_roll.show()
