@@ -71,7 +71,7 @@ class BoxRoll:
             self.sequence = quaternion.as_quat_array(np.loadtxt(fname))
         else:
             self.sequence = np.loadtxt(fname)
-            self.sequence[:,0],self.sequence[:,2] = self.sequence[:,2],self.sequence[:,0]
+            self.sequence[:,[0,2]] = self.sequence[:,[2,0]]
 
     def gen_sample_sequence(self,n=10000):
         data = np.zeros((n,4))
