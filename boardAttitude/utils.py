@@ -26,41 +26,14 @@ import json
 import quaternion
 from scipy.spatial.transform import Rotation as R
 
-def load_data(filename='./sample_data/RECORD.BIN'):
-    names = ['head','index',
-             'hi_temp','hi_gyro','hi_acc',
-             'lo_gyro','lo_acc','lo_magnet',
-             'angles','q']
-    formats = ['<H','<I',
-               '<h','3<i','3<i',
-               '3<h','3<h','3<h',
-               '3<h','4<h']
-    dtype = np.dtype({'names':names,'formats':formats})
-    with open(filename,'rb') as fid:
-        filelength = os.path.getsize(filename)
-        # skip the first 13 data record
-        fid.seek(13*64)
-        RecordSize = int(filelength/64-13)
-        print(f"{RecordSize} records in file")
-        data_orig = np.fromfile(fid,dtype=dtype)
-    data = dict()
-    data['index'] = data_orig['index']
-    data['hi_temp'] = data_orig['hi_temp']/80.+25
-    data['hi_gyro'] = data_orig['hi_gyro']* 0.00625/65536 # degree/sec
-    data['hi_acc'] = data_orig['hi_acc']* 1.25/65536     # mg
-    data['lo_gyro'] = data_orig['lo_gyro']* 2000./32768 #degree/sec
-    data['lo_gyro'][:,1:3] = -data['lo_gyro'][:,1:3]
-    data['lo_acc'] = data_orig['lo_acc']* 16000./32768 #mg
-    data['lo_acc'][:,1:3] = -data['lo_acc'][:,1:3]
-    data['lo_magnet'] = data_orig['lo_magnet'].astype(float)
-    data['angles'] = data_orig['angles']* 180./32768 #degree
-    data['q'] = data_orig['q']/32768. #degree
-    return data
-
 class BoxRoll:
-    def __init__(self,fname=None,useQuat=True):
+    def __init__(self,fname=None,useQuat=True,rot_order='XYZ'):
         self.fname = fname
         self.useQuat=useQuat
+        self.rot_order = rot_order
+        self.rot_axis = {'X':[0.00, 0.00, 1.00],
+                         'Y':[1.00, 0.00, 0.00],
+                         'Z':[0.00, 1.00, 0.00]}
         if not fname is None:
             self.load_data(fname)
         else:
@@ -79,9 +52,9 @@ class BoxRoll:
         data[:,3] = np.sin(np.linspace(0,np.pi,n))
         self.sequence = quaternion.as_quat_array(data)
 
-    def draw_cube(self, w, nx, ny, nz, useQuat=None):
-        if useQuat is None:
-            useQuat = self.useQuat
+    def draw_cube(self, w, nx, ny, nz, useQuat=None, rot_order=None):
+        useQuat = useQuat or self.useQuat
+        rot_order = rot_order or self.rot_order
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glLoadIdentity()
@@ -95,17 +68,20 @@ class BoxRoll:
         # if we rotate around x, infact we rotate around z, etc.
         if(useQuat):
             r = R.from_quat([nx,ny,nz,w])
-            roll, pitch , yaw = r.as_euler('XYZ',degrees=True)
+            roll, pitch , yaw = r.as_euler(rot_order,degrees=True)
             self.drawText((-2.6, -1.8, 2), "Roll: %f, Pitch: %f, Yaw: %f" %(roll, pitch, yaw), 16)
             glRotatef(2 * np.arccos(w) * 180.00/np.pi, ny , nz , nx)
         else:
-            yaw = nx
+            roll = nx
             pitch = ny
-            roll = nz
-            self.drawText((-2.6, -1.8, 2), "Yaw: %f, Pitch: %f, Roll: %f" %(yaw, pitch, roll), 16)
-            glRotatef(roll, 0.00, 0.00, 1.00)
-            glRotatef(pitch, 1.00, 0.00, 0.00)
-            glRotatef(yaw, 0.00, 1.00, 0.00)
+            yaw = nz
+            self.drawText((-2.6, -1.8, 2), "Roll: %f, Pitch: %f, Yaw: %f" %(roll, pitch, yaw), 16)
+            rot_deg = {'X':roll,'Y':pitch,'Z':yaw}
+            for axis in rot_order[::-1]:
+                glRotatef(rot_deg[axis],
+                          self.rot_axis[axis][0],
+                          self.rot_axis[axis][1],
+                          self.rot_axis[axis][2])
 
         glBegin(GL_QUADS)
         glColor3f(0.0, 1.0, 0.0)
@@ -152,14 +128,16 @@ class BoxRoll:
         glRasterPos3d(*position)
         glDrawPixels(textSurface.get_width(), textSurface.get_height(), GL_RGBA, GL_UNSIGNED_BYTE, textData)
 
-    def show(self,sequence=None,useQuat=None,fps=50):
-        if useQuat is None:
-            useQuat = self.useQuat
+    def show(self,sequence=None,useQuat=None,fps=50,rot_order=None):
+        useQuat = useQuat or self.useQuat
+        rot_order = rot_order or self.rot_order
+        if sequence is None:
+            sequence = self.sequence
         self._init_view()
         frames = 0
         ticks = pygame.time.get_ticks()
         fps_clock = pygame.time.Clock()
-        for x in self.sequence:
+        for x in sequence:
             event = pygame.event.poll()
             if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
                 break
@@ -167,8 +145,8 @@ class BoxRoll:
                 w,nx,ny,nz = x.components
                 self.draw_cube(w, nx, ny, nz, useQuat)
             else:
-                yaw,pitch,roll = x
-                self.draw_cube(1, yaw, pitch, roll, useQuat)
+                roll,pitch,yaw= x
+                self.draw_cube(1, roll, pitch, yaw, useQuat)
             pygame.display.flip()
             fps_clock.tick(fps)
             frames += 1

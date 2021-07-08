@@ -20,6 +20,7 @@ import warnings
 import numpy as np
 from numpy.linalg import norm
 import quaternion
+from scipy.spatial.transform import Rotation as R
 
 class Madgwick:
     sample_period = 1/256
@@ -173,21 +174,21 @@ class Kalman:
         self.roll = 0 # updates
         self.rollCovariance = np.zeros((2,2)) # updates
         self.rollError = 0.001
-        self.rollDriftError = 0.003
+        self.rollDriftError = 0.001
         self.rollMeasurementError = 0.03
 
         self.currentPitchState = np.vstack((0.0, 0.0)) # updates
         self.pitch = 0 # updates
         self.pitchCovariance = np.zeros((2,2)) # updates
         self.pitchError= 0.001
-        self.pitchDriftError = 0.003
+        self.pitchDriftError = 0.001
         self.pitchMeasurementError = 0.03
 
         self.currentYawState = np.vstack((0.0, 0.0)) # updates
         self.yaw = 0 # updates
         self.yawCovariance = np.zeros((2,2)) #updates
         self.yawError = 0.001
-        self.yawDriftError = 0.003
+        self.yawDriftError = 0.001
         self.yawMeasurementError = 0.03
 
     def computeAndUpdateRollPitchYaw(self, a, g, m, dt):
@@ -213,11 +214,13 @@ class Kalman:
         ax,ay,az = a
         gx,gy,gz = g
         mx,my,mz = m
-        measuredRoll, measuredPitch = self.computeRollAndPitch(a)
-        measuredYaw = self.computeYaw(measuredRoll, measuredPitch, m)
+        measuredRoll, measuredPitch, measuredYaw= self.computeRollPitchYaw(a,m)
+#        measuredRoll, measuredPitch = self.computeRollAndPitch(a)
+#        measuredYaw = self.computeYaw(measuredRoll, measuredPitch, m)
+#        measuredRoll,measuredPitch, measuredYaw = self.__degimblock(measuredRoll,measuredPitch,measuredYaw)
 
-        reset, gy = self.__restrictRollAndPitch(measuredRoll, measuredPitch, gy)
-        # reset = 0
+#        reset, gy = self.__restrictRollAndPitch(measuredRoll, measuredPitch, gy)
+        reset = 0
         if not reset:
             self.roll, self.currentRollState, self.rollCovariance = self.update(self.currentRollState, \
                                                                 measuredRoll, self.rollCovariance, \
@@ -234,14 +237,21 @@ class Kalman:
                                                             self.yawError, self.yawDriftError, \
                                                             self.yawMeasurementError, gz, dt)
 
+    def __degimblock(self,measuredRoll,measuredPitch,measuredYaw):
+        if np.isclose(measuredPitch,90.):
+            tmp = measuredRoll - measuredYaw
+            measuredYaw = 0
+            measuredRoll = tmp
+        return measuredRoll,measuredPitch,measuredYaw
+
     def __restrictRollAndPitch(self, measuredRoll, measuredPitch, gy):
 
         reset = 0
         if (measuredRoll < -90 and self.roll > 90) or (measuredRoll > 90 and self.roll < -90):
             self.roll = measuredRoll
             reset = 1
-        if abs(self.roll) > 90:
-            gy = -1*gy
+#        if abs(self.roll) > 90:
+#            gy = -1*gy
         return reset, gy
 
 
@@ -366,8 +376,15 @@ class Kalman:
         """
 
         ax,ay,az = a
-        measuredRoll = np.degrees(np.arctan2(ay,az))
-        measuredPitch = np.degrees(np.arctan2(-1*ax, np.sqrt(np.square(ay) + np.square(az)) ) )
+# original
+#        measuredRoll = np.degrees(np.arctan2(ay,az))
+#        measuredPitch = np.degrees(np.arctan2(-1*ax, np.sqrt(np.square(ay) + np.square(az)) ) )
+# my method
+#        measuredRoll = np.degrees(np.arctan2(-ay,az))
+#        measuredPitch = np.degrees(np.arctan2(ax, np.sqrt(np.square(ay) + np.square(az)) ) )
+# their method
+        measuredRoll = -np.degrees(np.arctan2(ay,ax))
+        measuredPitch = np.degrees(np.arctan2(np.sqrt(np.square(ax)+np.square(ay)),az))
 
         return measuredRoll, measuredPitch
 
@@ -381,7 +398,7 @@ class Kalman:
             estimate obtained from accelerometer
         pitch: float
             estimate obtained from accelerometer
-        mx: float
+        m: float
             magnetic moment about x,y,z axis
         Returns
         -------
@@ -393,16 +410,36 @@ class Kalman:
         mx,my,mz = m
         roll = np.radians(roll)
         pitch = np.radians(pitch)
-        magLength = np.sqrt(sum([mx*mx + my*my + mz*mz]))
+        magLength = np.linalg.norm(m)
         mx = mx/magLength
         my = my/magLength
         mz = mz/magLength
-
-        measuredYaw = np.degrees(np.arctan2(np.sin(roll)*mz - np.cos(roll)*my,\
-                    np.cos(pitch)*mx + np.sin(roll)*np.sin(pitch)*my \
-                    + np.cos(roll)*np.sin(pitch)*mz) )
+        print(mx,my,mz)
+#original
+#        measuredYaw = np.degrees(np.arctan2(np.sin(roll)*mz - np.cos(roll)*mx,\
+#                    np.cos(pitch)*mx + np.sin(roll)*np.sin(pitch)*my \
+#                    + np.cos(roll)*np.sin(pitch)*mz) )
+# my method
+#        measuredYaw = np.degrees(np.arctan2(np.sin(roll)*mz + np.cos(roll)*my,
+#                    np.cos(pitch)*mx + np.sin(roll)*np.sin(pitch)*my
+#                    - np.cos(roll)*np.sin(pitch)*mz) )
+# their method
+        measuredYaw = np.degrees(np.arctan2(np.sin(roll)*mx + np.cos(roll)*my,
+                    np.cos(pitch)*mz + np.sin(roll)*np.cos(pitch)*my
+                    - np.cos(roll)*np.sin(pitch)*mx) )
 
         return measuredYaw
+    def computeRollPitchYaw(self, a, m):
+        rot_matrix = np.zeros((3,3))
+        z_axis = a/np.linalg.norm(a)
+        m = m/np.linalg.norm(m)
+        y_axis = np.cross(z_axis,m)
+        x_axis = np.cross(y_axis,z_axis)
+        rot_matrix[0,:] = x_axis
+        rot_matrix[1,:] = y_axis
+        rot_matrix[2,:] = z_axis
+        r = R.from_matrix(rot_matrix)
+        return r.as_euler('xyz',degrees=True)
 
     def update(self, currentState, measurement, currentCovariance, error, driftError, measurementError, angularVelocity ,dt):
         """
@@ -448,6 +485,8 @@ class Kalman:
         motionModel = np.array([[1,-1*dt],[0,1]])
 
         prediction = np.matmul(motionModel,currentState) + dt*(np.vstack((angularVelocity,0.0)))
+        if np.abs(prediction[0]-measurement) > 180:
+            prediction[0] += np.sign(measurement - prediction[0])*360
 
         errorMatrix = np.array([error, driftError])*np.identity(2)
         predictedCovariance = np.matmul(np.matmul(motionModel, currentCovariance), (motionModel.T)) + errorMatrix
