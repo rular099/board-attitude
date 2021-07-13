@@ -1,0 +1,6 @@
+numpy
+scipy
+quaternion
+json
+pygame
+PyOpenGL
