@@ -33,9 +33,9 @@ class Censor:
         self.data['hi_gyro'] = data_orig['hi_gyro']* 0.00625/65536 # degree/sec
         self.data['hi_acc'] = data_orig['hi_acc']* 1.25/65536     # mg
         self.data['lo_gyro'] = data_orig['lo_gyro']* 2000./32768 #degree/sec
-        self.data['lo_gyro'][:,1:3] = -self.data['lo_gyro'][:,1:3]
+#        self.data['lo_gyro'][:,1:3] = -self.data['lo_gyro'][:,1:3]
         self.data['lo_acc'] = data_orig['lo_acc']* 16000./32768 #mg
-        self.data['lo_acc'][:,1:3] = -self.data['lo_acc'][:,1:3]
+#        self.data['lo_acc'][:,1:3] = -self.data['lo_acc'][:,1:3]
         self.data['lo_magnet'] = data_orig['lo_magnet'].astype(float)
         self.data['angles'] = data_orig['angles']* 180./32768 #degree
         self.data['q'] = data_orig['q']/32768. #degree

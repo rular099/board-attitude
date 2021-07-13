@@ -24,7 +24,7 @@ from scipy.spatial.transform import Rotation as R
 
 class Madgwick:
     sample_period = 1/256
-    q = np.quaternion(1, 0, 0, 0)
+    q = np.quaternion(0, 1, 0, 0)
     gyro_error = np.pi*5/180
     gyro_drift = np.pi*0.2/180
     beta = np.sqrt(3./4)*gyro_error
@@ -110,6 +110,7 @@ class Madgwick:
 
         # Compute rate of change of quaternion
         qdot = (q * np.quaternion(0, gyroscope[0], gyroscope[1], gyroscope[2])) * 0.5 - self.beta * np.quaternion(*step.T)
+#        qdot = - self.beta * np.quaternion(*step.T)
 
         # Integrate to yield quaternion
         q += qdot * self.sample_period
@@ -212,15 +213,18 @@ class Kalman:
 
         """
         ax,ay,az = a
-        gx,gy,gz = g
+        #gx,gy,gz = g
         mx,my,mz = m
-        measuredRoll, measuredPitch, measuredYaw= self.computeRollPitchYaw(a,m)
+        rot_matrix = self.computeRotmatrix(a,m)
+        r = R.from_matrix(rot_matrix)
+        measuredRoll, measuredPitch, measuredYaw = r.as_euler('xyz',degrees=True)
 #        measuredRoll, measuredPitch = self.computeRollAndPitch(a)
 #        measuredYaw = self.computeYaw(measuredRoll, measuredPitch, m)
 #        measuredRoll,measuredPitch, measuredYaw = self.__degimblock(measuredRoll,measuredPitch,measuredYaw)
 
 #        reset, gy = self.__restrictRollAndPitch(measuredRoll, measuredPitch, gy)
         reset = 0
+        gx,gy,gz = rot_matrix @ g
         if not reset:
             self.roll, self.currentRollState, self.rollCovariance = self.update(self.currentRollState, \
                                                                 measuredRoll, self.rollCovariance, \
@@ -414,7 +418,6 @@ class Kalman:
         mx = mx/magLength
         my = my/magLength
         mz = mz/magLength
-        print(mx,my,mz)
 #original
 #        measuredYaw = np.degrees(np.arctan2(np.sin(roll)*mz - np.cos(roll)*mx,\
 #                    np.cos(pitch)*mx + np.sin(roll)*np.sin(pitch)*my \
@@ -429,15 +432,20 @@ class Kalman:
                     - np.cos(roll)*np.sin(pitch)*mx) )
 
         return measuredYaw
-    def computeRollPitchYaw(self, a, m):
+
+    def computeRotmatrix(self, a, m):
         rot_matrix = np.zeros((3,3))
         z_axis = a/np.linalg.norm(a)
         m = m/np.linalg.norm(m)
         y_axis = np.cross(z_axis,m)
         x_axis = np.cross(y_axis,z_axis)
-        rot_matrix[0,:] = x_axis
-        rot_matrix[1,:] = y_axis
+        rot_matrix[0,:] = x_axis/np.linalg.norm(x_axis)
+        rot_matrix[1,:] = y_axis/np.linalg.norm(y_axis)
         rot_matrix[2,:] = z_axis
+        return rot_matrix
+
+    def computeRollPitchYaw(self, a, m):
+        rot_matrix = self.computeRotmatrix(a,m)
         r = R.from_matrix(rot_matrix)
         return r.as_euler('xyz',degrees=True)
 
@@ -497,7 +505,7 @@ class Kalman:
         kalmanGain = np.matmul(predictedCovariance, np.vstack((1.0, 0.0)))/measurementCovariance
 
         correctedState = prediction + kalmanGain*(measurement - np.matmul(np.array([1.0, 0.0]), prediction))
-        # correctedState = prediction + kalmanGain*(difference)
+#        correctedState = prediction
 
         updatedCovariance = np.matmul( np.identity(2) - np.matmul(kalmanGain, np.array([1.0, 0.0]).reshape((1,2))), predictedCovariance)
 
